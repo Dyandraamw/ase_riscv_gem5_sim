@@ -19,7 +19,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libtool patchutils bc zlib1g-dev libexpat-dev ninja-build git cmake \
         libglib2.0-dev libslirp-dev ca-certificates \
     && rm -rf /var/lib/apt/lists/*
-RUN git clone https://github.com/riscv-collab/riscv-gnu-toolchain.git /src/riscv-gnu-toolchain
+# Network hiccups are common on slow connections: use HTTP/1.1, shallow clones and retries.
+RUN git config --global http.version HTTP/1.1 \
+    && for i in 1 2 3 4 5; do \
+         git clone --depth 1 https://github.com/riscv-collab/riscv-gnu-toolchain.git /src/riscv-gnu-toolchain && break; \
+         rm -rf /src/riscv-gnu-toolchain; sleep 10; \
+       done \
+    && test -d /src/riscv-gnu-toolchain/.git
 WORKDIR /src/riscv-gnu-toolchain
 ARG TOOLCHAIN_JOBS=0
 RUN ./configure --prefix=/opt/riscv --enable-multilib \
@@ -35,9 +41,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         pkg-config virtualenv python3-venv ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 ARG GEM5_BRANCH=stable
-RUN git clone --branch "${GEM5_BRANCH}" --single-branch https://github.com/cad-polito-it/gem5.git /opt/gem5
+RUN git config --global http.version HTTP/1.1 \
+    && for i in 1 2 3 4 5; do \
+         git clone --depth 1 --branch "${GEM5_BRANCH}" --single-branch https://github.com/cad-polito-it/gem5.git /opt/gem5 && break; \
+         rm -rf /opt/gem5; sleep 10; \
+       done \
+    && test -d /opt/gem5/.git
 WORKDIR /opt/gem5
 ARG GEM5_JOBS=3
+# BuildKit builds independent stages in parallel; toolchain + gem5 compiling together exceed
+# 8 GB of RAM (the linker gets killed). Depend on the finished toolchain so they run one at a time.
+RUN --mount=type=bind,from=toolchain-build,source=/opt/riscv,target=/mnt/toolchain-built true
 RUN virtualenv -p python3.10 /opt/venv && /opt/venv/bin/pip install scons==4 \
     && . /opt/venv/bin/activate \
     && PYTHON=/usr/bin/python3.10 PYTHON_CONFIG=/usr/bin/python3.10-config \
