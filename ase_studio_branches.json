@@ -1,5 +1,5 @@
 {
-  "simulator": "main",
+  "simulator": "docker-support",
   "studio": "main",
   "gem5": "stable"
 }
